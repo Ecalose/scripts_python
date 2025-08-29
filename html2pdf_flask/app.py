@@ -2,8 +2,8 @@ import io
 import re
 from flask import Flask, request, render_template, Response, flash, redirect, url_for
 from weasyprint import HTML, CSS
-# 确保已安装 xhtml2pdf: pip install xhtml2pdf
 from xhtml2pdf import pisa
+import plutoprint
 
 # 初始化 Flask 应用
 app = Flask(__name__)
@@ -24,6 +24,7 @@ def generate_page_css(page_size, orientation, margin_top, margin_bottom, margin_
     """
     return css_str
 
+
 def convert_weasyprint(html_content: str, page_css: str) -> bytes:
     """
     使用 WeasyPrint 将 HTML 字符串转换为 PDF，并应用页面样式。
@@ -36,6 +37,7 @@ def convert_weasyprint(html_content: str, page_css: str) -> bytes:
     # WeasyPrint 直接处理 HTML 字符串和样式表，并在内存中生成 PDF
     # base_url='.' 帮助 WeasyPrint 解析 HTML 中的相对路径（如图片）
     return HTML(string=html_content, base_url='.').write_pdf(stylesheets=stylesheets)
+
 
 def convert_xhtml2pdf(html_content: str, page_css: str) -> bytes:
     """
@@ -61,8 +63,52 @@ def convert_xhtml2pdf(html_content: str, page_css: str) -> bytes:
 
     if pdf.err:
         raise Exception(f"xhtml2pdf conversion error: {pdf.err}")
-    
+
     return result.getvalue()
+
+
+def convert_plutoprint(html_content: str, page_css: str, margin_top, margin_bottom, margin_left, margin_right) -> bytes:
+    """
+    使用 PlutoPrint 将 HTML 字符串转换为 PDF。
+    https://plutoprint.readthedocs.io/en/latest/api_reference/book.html#plutoprint.Book.load_html
+    :param html_content: HTML内容的字符串。
+    :param page_css: 包含 @page 规则的 CSS 字符串。
+    :param margin_right: 边距参数 (单位: mm)。
+    :param margin_left:
+    :param margin_bottom:
+    :param margin_top:
+    :return: PDF 的二进制数据。
+    """
+    # PlutoPrint 在 Book 初始化时设置页面大小等属性，边距通过 user_style 设置
+    # plutoprint.Book() 不直接接受页面大小字符串，所以我们需要一个映射
+    page_sizes = {
+        'A4': plutoprint.PAGE_SIZE_A4,
+        'A3': plutoprint.PAGE_SIZE_A3,
+        'Letter': plutoprint.PAGE_SIZE_LETTER,
+        'Legal': plutoprint.PAGE_SIZE_LEGAL,
+    }
+    page_size_value = page_sizes.get(request.form.get('page_size', 'A4').upper())
+
+    book = plutoprint.Book(page_size_value.landscape(), plutoprint.PAGE_MARGINS_NONE)
+
+    # 将边距信息和页面 CSS 结合
+    full_css = f"""
+    {page_css}
+    html {{
+        margin-top: {margin_top}mm;
+        margin-bottom: {margin_bottom}mm;
+        margin-left: {margin_left}mm;
+        margin-right: {margin_right}mm;
+    }}
+    """
+
+    book.load_html(html_content, user_style=full_css)
+
+    # 创建一个内存中的字节流来保存 PDF
+    pdf_buffer = io.BytesIO()
+    book.write_to_pdf_stream(pdf_buffer)
+    pdf_buffer.seek(0)
+    return pdf_buffer.getvalue()
 
 
 # 为同一个 URL 定义 GET 和 POST 方法
@@ -74,7 +120,7 @@ def upload_and_convert():
         if 'html_file' not in request.files:
             flash('请求中没有文件部分 (No file part in the request.)')
             return redirect(url_for('upload_and_convert'))
-        
+
         file = request.files['html_file']
 
         # 2. 检查用户是否选择了文件
@@ -88,7 +134,7 @@ def upload_and_convert():
                 # 4. 读取上传文件的内容
                 # file.read() 返回的是 bytes，需要解码成 utf-8 字符串
                 html_content = file.read().decode('utf-8')
-                
+
                 # 从表单获取 PDF 参数，并提供默认值
                 page_size = request.form.get('page_size', 'A4')
                 orientation = request.form.get('orientation', 'portrait')
@@ -101,9 +147,9 @@ def upload_and_convert():
                 page_css = generate_page_css(
                     page_size, orientation, margin_top, margin_bottom, margin_left, margin_right
                 )
-                
+
                 # 5. 根据用户在表单中的选择，决定使用哪个转换器
-                converter_choice = request.form.get('converter', 'weasyprint') # 默认为 weasyprint
+                converter_choice = request.form.get('converter', 'weasyprint')  # 默认为 weasyprint
 
                 if converter_choice == 'weasyprint':
                     flash('使用 WeasyPrint 进行转换...', 'info')
@@ -111,12 +157,15 @@ def upload_and_convert():
                 elif converter_choice == 'xhtml2pdf':
                     flash('使用 xhtml2pdf 进行转换...', 'info')
                     pdf_bytes = convert_xhtml2pdf(html_content, page_css)
+                elif converter_choice == 'plutoprint':
+                    flash('使用 PlutoPrint 进行转换...', 'info')
+                    pdf_bytes = convert_plutoprint(html_content, page_css, margin_top, margin_bottom, margin_left,
+                                                   margin_right)
                 else:
                     # 如果收到无效的转换器名称，则报错
                     flash(f'无效的转换器: {converter_choice}', 'error')
                     return redirect(url_for('upload_and_convert'))
-                
-                
+
                 # 6. 创建一个 HTTP 响应，将 PDF 发送给用户
                 return Response(
                     pdf_bytes,
@@ -126,7 +175,8 @@ def upload_and_convert():
                         'Content-Disposition': 'attachment;filename=converted_document.pdf'
                     }
                 )
-            except Exception as e:
+            except Exception | EOFError as e:
+                print(e)
                 # 捕获转换过程中可能出现的任何错误
                 flash(f"PDF 转换过程中发生错误: {e}", 'error')
                 return redirect(url_for('upload_and_convert'))

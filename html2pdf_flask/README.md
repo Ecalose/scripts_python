@@ -11,7 +11,7 @@
 - 将HTML网页内容转换为PDF文件
 - 支持自定义页面尺寸和边距
 - 提供Web界面和RESTful API接口
-- 支持两种转换引擎：WeasyPrint（推荐）和xhtml2pdf
+- 支持转换引擎：WeasyPrint（推荐）、plutoprint、xhtml2pdf
 
 
 ## 安装说明
@@ -19,36 +19,25 @@
 ### 环境要求
 
 - Python 3.6+
-- Flask
-- WeasyPrint 或 xhtml2pdf
-- wkhtmltopdf (可选，用于xhtml2pdf)
+- libstdc++.so.6 GLIBCXX_3.4.31 `conda install -c conda-forge libstdcxx-ng`
 
 ### 安装步骤
 
 1. 克隆项目到本地：
+
 ```bash
 git clone https://github.com/bajins/scripts_python.git
 cd html2pdf_flask
 ```
 
 2. 安装依赖：
+
 ```bash
-pip install -r Flask WeasyPrint xhtml2pdf wkhtmltopdf -y
+pip install -r Flask WeasyPrint xhtml2pdf wkhtmltopdf plutoprint -y
 ```
 
-3. 安装PDF转换引擎：
-   
-   选择1：安装WeasyPrint（推荐）
-   ```bash
-   pip install weasyprint
-   ```
-   
-   选择2：安装xhtml2pdf
-   ```bash
-   pip install xhtml2pdf
-   ```
+3. 启动服务：
 
-4. 启动服务：
 ```bash
 python app.py
 ```
